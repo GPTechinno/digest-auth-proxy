@@ -34,5 +34,10 @@ COPY --from=builder /dist/digest-auth-proxy /
 # Export necessary port
 EXPOSE 9999
 
+# Export necessary env variable
+ENV DAP_SERVER=""
+ENV DAP_USER=""
+ENV DAP_PASS=""
+
 # Command to run
 ENTRYPOINT ["/digest-auth-proxy"]

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 
 	dac "github.com/xinsnake/go-http-digest-auth-client"
@@ -65,19 +66,35 @@ func main() {
 	flag.Parse()
 
 	// Check argument validity
-	ip = net.ParseIP(*pIP)
+	if *pIP != "" {
+		ip = net.ParseIP(*pIP)
+	} else {
+		if os.Getenv("DAP_SERVER") != "" {
+			ip = net.ParseIP(os.Getenv("DAP_SERVER"))
+		}
+	}
 	if ip == nil {
 		log.Fatal("Error parsing ip : ", *pIP)
 	}
-	if *pUser == "" {
-		log.Fatal("Error User cannot be empty")
+	if *pUser != "" {
+		user = *pUser
+	} else {
+		if os.Getenv("DAP_USER") != "" {
+			user = os.Getenv("DAP_USER")
+		} else {
+			log.Fatal("Error User cannot be empty")
+		}
 	}
-	if *pPassword == "" {
-		log.Fatal("Error Password cannot be empty")
+	if *pPassword != "" {
+		pass = *pPassword
+	} else {
+		if os.Getenv("DAP_PASS") != "" {
+			pass = os.Getenv("DAP_PASS")
+		} else {
+			log.Fatal("Error Password cannot be empty")
+		}
 	}
 
-	user = *pUser
-	pass = *pPassword
 	dr.CertVal = true
 
 	handler := &proxy{}
