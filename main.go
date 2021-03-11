@@ -9,20 +9,20 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-
-	dac "github.com/xinsnake/go-http-digest-auth-client"
+	"time"
 )
 
-var dr dac.DigestRequest
 var user string
 var pass string
 var ip net.IP
+var client *http.Client
+var jar *Jar
 
 type proxy struct {
 }
 
 func (p *proxy) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
-	log.Println(req.RemoteAddr, " ", req.Method, " ", req.URL)
+	log.Println("<", req.RemoteAddr, req.Method, req.URL)
 
 	if req.URL.Scheme == "" {
 		req.URL.Scheme = "http"
@@ -36,17 +36,37 @@ func (p *proxy) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
 	}
 
 	defer req.Body.Close()
-	body, _ := ioutil.ReadAll(req.Body)
-	// update digest authentication request
-	dr.UpdateRequest(user, pass, req.Method, req.URL.String(), string(body))
-	resp, err := dr.Execute()
+	req2, err := http.NewRequest(req.Method, req.URL.String(), req.Body)
+	log.Println(">", req2.Method, req2.URL)
+	// TODO : copy some headers (maybe)
+	resp, err := client.Do(req2)
 	if err != nil {
 		http.Error(wr, "Server Error", http.StatusInternalServerError)
 		log.Println(err)
 		return
 	}
+
+	log.Println("<", resp.Status)
+	if resp.StatusCode == 401 {
+		wa := newWwwAuthenticate(resp.Header.Get("WWW-Authenticate"))
+		body, _ := ioutil.ReadAll(req.Body)
+		auth, err := newAuthorization(wa, user, pass, req.RequestURI, req2.Method, string(body))
+		if err != nil {
+			http.Error(wr, "Server Error", http.StatusInternalServerError)
+			log.Println(err)
+			return
+		}
+		req2.Header.Add("Authorization", auth.toString())
+		log.Println(">", req2.Method, req2.URL)
+		resp, err = client.Do(req2)
+		if err != nil {
+			http.Error(wr, "Server Error", http.StatusInternalServerError)
+			log.Println(err)
+			return
+		}
+		log.Println("<", resp.Status)
+	}
 	defer resp.Body.Close()
-	log.Println(req.RemoteAddr, " ", resp.Status)
 	for k, vv := range resp.Header {
 		for _, v := range vv {
 			wr.Header().Add(k, v)
@@ -54,6 +74,7 @@ func (p *proxy) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
 	}
 	wr.WriteHeader(resp.StatusCode)
 	io.Copy(wr, resp.Body)
+	log.Println(">", resp.Status)
 }
 
 func main() {
@@ -95,7 +116,13 @@ func main() {
 		}
 	}
 
-	dr.CertVal = true
+	// Init Cookies Jar
+	jar = NewJar()
+	// Init HTTP Client
+	client = &http.Client{
+		Jar:     jar,
+		Timeout: 5 * time.Second,
+	}
 
 	handler := &proxy{}
 	log.Println("Starting proxy server on port ", port)
