@@ -17,6 +17,7 @@ var pass string
 var ip net.IP
 var client *http.Client
 var jar *Jar
+var envoy bool
 
 type proxy struct {
 }
@@ -47,6 +48,20 @@ func (p *proxy) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
 	}
 
 	log.Println("<", resp.Status)
+	if envoy {
+		if resp.StatusCode == 400 { // Bad Cookie
+			reqCookie, err := http.NewRequest(req.Method, req.URL.String(), req.Body)
+			reqCookie.URL.Path = "/installer/setup/home" // envoy give a cookie on this URI
+			log.Println(">", reqCookie.Method, reqCookie.URL)
+			resp, err = client.Do(reqCookie)
+			if err != nil {
+				http.Error(wr, "Server Error", http.StatusInternalServerError)
+				log.Println(err)
+				return
+			}
+			log.Println("<", resp.Status)
+		}
+	}
 	if resp.StatusCode == 401 {
 		wa := newWwwAuthenticate(resp.Header.Get("WWW-Authenticate"))
 		body, _ := ioutil.ReadAll(req.Body)
@@ -55,6 +70,19 @@ func (p *proxy) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
 			http.Error(wr, "Server Error", http.StatusInternalServerError)
 			log.Println(err)
 			return
+		}
+		if envoy {
+			reqCookie, err := http.NewRequest(req.Method, req.URL.String(), req.Body)
+			reqCookie.URL.Path = "/installer/setup/home" // envoy give a cookie on this URI
+			reqCookie.Header.Add("Authorization", auth.toString())
+			log.Println(">", reqCookie.Method, reqCookie.URL)
+			resp, err = client.Do(reqCookie)
+			if err != nil {
+				http.Error(wr, "Server Error", http.StatusInternalServerError)
+				log.Println(err)
+				return
+			}
+			log.Println("<", resp.Status)
 		}
 		req2.Header.Add("Authorization", auth.toString())
 		log.Println(">", req2.Method, req2.URL)
@@ -84,6 +112,7 @@ func main() {
 	pPassword := flag.String("pass", "", "Digest Auth Password")
 	var port int
 	flag.IntVar(&port, "port", 9999, "Proxy TCP Port")
+	flag.BoolVar(&envoy, "envoy", false, "Handle Envoy Auth")
 	flag.Parse()
 
 	// Check argument validity
